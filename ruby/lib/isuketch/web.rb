@@ -241,21 +241,13 @@ module Isuketch
 
         stmt = dbh.prepare(%|
           INSERT INTO `rooms`
-          (`name`, `canvas_width`, `canvas_height`)
+          (`name`, `canvas_width`, `canvas_height`, `owner_id`)
           VALUES
-          (?, ?, ?)
+          (?, ?, ?, ?)
         |)
-        stmt.execute(posted_room[:name], posted_room[:canvas_width], posted_room[:canvas_height])
+        stmt.execute(posted_room[:name], posted_room[:canvas_width], posted_room[:canvas_height], token[:id])
         room_id = dbh.last_id
         stmt.close
-
-        stmt = dbh.prepare(%|
-          INSERT INTO `room_owners`
-          (`room_id`, `token_id`)
-          VALUES
-          (?, ?)
-        |)
-        stmt.execute(room_id, token[:id])
       rescue
         dbh.query(%|ROLLBACK|)
         halt(500, {'Content-Type' => 'application/json'}, JSON.generate(
@@ -327,9 +319,9 @@ module Isuketch
       stroke_count = get_strokes(dbh, room[:id], 0).count
       if stroke_count == 0
         count = select_one(dbh, %|
-          SELECT COUNT(*) as cnt FROM `room_owners`
+          SELECT COUNT(*) as cnt FROM `rooms`
           WHERE `room_id` = ?
-            AND `token_id` = ?
+            AND `owner_id` = ?
         |, [room[:id], token[:id]])[:cnt].to_i
         if count == 0
           halt(400, {'Content-Type' => 'application/json'}, JSON.generate(
@@ -413,7 +405,7 @@ module Isuketch
           last_stroke_id = request.env['HTTP_LAST_EVENT_ID'].to_i
         end
 
-        5.downto(0) do |i|
+        360.downto(0) do |i|
           sleep 0.5
 
           strokes = get_strokes(dbh, room[:id], last_stroke_id)
