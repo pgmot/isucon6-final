@@ -25,4 +25,4 @@ services:
       SSL_CERT: /ssl/oreore.crt
       ISUCON_ENV: production
       NODE_ENV: production
-      PORT: 443
+      PORT: 8080
