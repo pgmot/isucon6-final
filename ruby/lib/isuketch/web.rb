@@ -3,6 +3,7 @@ require 'time'
 
 require 'mysql2'
 require 'sinatra/base'
+require 'redis'
 
 module Isuketch
   class Web < ::Sinatra::Base
@@ -16,25 +17,30 @@ module Isuketch
     end
 
     helpers do
+      def get_redis
+        Thread.current[:redis] ||=
+          Redis.new(:host => "127.0.0.1", :db => 0)
+        end
+      end
+
       def get_dbh
-        host = ENV['MYSQL_HOST'] || 'localhost'
-        port = ENV['MYSQL_PORT'] || '3306'
-        user = ENV['MYSQL_USER'] || 'root'
-        pass = ENV['MYSQL_PASS'] || ''
-        name = 'isuketch'
-        mysql = Mysql2::Client.new(
-          username: user,
-          password: pass,
-          database: name,
-          host: host,
-          port: port,
-          encoding: 'utf8mb4',
-          init_command: %|
+        Thread.current[:db] ||=
+          begin
+            host = ENV['REDIS_HOST'] || 'localhost'
+            port = ENV['REDIS_PORT'] || '6379'
+            mysql = Mysql2::Client.new(
+              username: user,
+              password: pass,
+              host: host,
+              port: port,
+              encoding: 'utf8mb4',
+              init_command: %|
             SET TIME_ZONE = 'UTC'
-          |,
-        )
-        mysql.query_options.update(symbolize_keys: true)
-        mysql
+              |,
+            )
+            mysql.query_options.update(symbolize_keys: true)
+            mysql
+          end
       end
 
       def select_one(dbh, sql, binds)
@@ -125,24 +131,26 @@ module Isuketch
         |, [stroke_id])
       end
 
-      def get_watcher_count(dbh, room_id)
-        select_one(dbh, %|
-          SELECT COUNT(*) AS `watcher_count`
-          FROM `room_watchers`
-          WHERE `room_id` = ?
-            AND `updated_at` > CURRENT_TIMESTAMP(6) - INTERVAL 3 SECOND
-        |, [room_id])[:watcher_count].to_i
+      def get_watcher_count(room_id)
+        get_redis.zcount(room_id, Time.now.to_f-3, Time.now.to_f)
+        #select_one(dbh, %|
+        #  SELECT COUNT(*) AS `watcher_count`
+        #  FROM `room_watchers`
+        #  WHERE `room_id` = ?
+        #    AND `updated_at` > CURRENT_TIMESTAMP(6) - INTERVAL 3 SECOND
+        #|, [room_id])[:watcher_count].to_i
       end
 
-      def update_room_watcher(dbh, room_id, csrf_token)
-        stmt = dbh.prepare(%|
-          INSERT INTO `room_watchers` (`room_id`, `token_id`)
-          VALUES (?, ?)
-          ON DUPLICATE KEY UPDATE `updated_at` = CURRENT_TIMESTAMP(6)
-        |)
-        stmt.execute(room_id, csrf_token)
-      ensure
-        stmt.close
+      def update_room_watcher(room_id, csrf_token)
+        get_redis.zadd(room_id, Time.now.to_f, csrf_token)
+        #stmt = dbh.prepare(%|
+        #  INSERT INTO `room_watchers` (`room_id`, `token_id`)
+        #  VALUES (?, ?)
+        #  ON DUPLICATE KEY UPDATE `updated_at` = CURRENT_TIMESTAMP(6)
+        #|)
+        #stmt.execute(room_id, csrf_token)
+      #ensure
+      #  stmt.close
       end
     end
 
@@ -258,7 +266,7 @@ module Isuketch
         stroke[:points] = get_stroke_points(dbh, stroke[:id])
       end
       room[:strokes] = strokes
-      room[:watcher_count] = get_watcher_count(dbh, room[:id])
+      room[:watcher_count] = get_watcher_count(room[:id])
 
       dbh.close
       content_type :json
@@ -370,8 +378,8 @@ module Isuketch
           next
         end
 
-        update_room_watcher(dbh, room[:id], token[:id])
-        watcher_count = get_watcher_count(dbh, room[:id])
+        update_room_watcher(room[:id], token[:id])
+        watcher_count = get_watcher_count(room[:id])
 
         writer << ("retry:500\n\n" + "event:watcher_count\n" + "data:#{watcher_count}\n\n")
 
@@ -390,8 +398,8 @@ module Isuketch
             last_stroke_id = stroke[:id]
           end
 
-          update_room_watcher(dbh, room[:id], token[:id])
-          new_watcher_count = get_watcher_count(dbh, room[:id])
+          update_room_watcher(room[:id], token[:id])
+          new_watcher_count = get_watcher_count(room[:id])
           if new_watcher_count != watcher_count
             watcher_count = new_watcher_count
             writer << ("event:watcher_count\n" + "data:#{watcher_count}\n\n")

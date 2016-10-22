@@ -4,6 +4,12 @@ services:
   #  extends:
   #    file: docker-compose-mysql.yml
   #    service: mysql
+  redis:
+    restart: always
+    image: redis
+    #volumes:
+    #    - /my/own/datadir:/data
+    command: redis-server --appendonly yes
   ruby:
     build:
       context: ./ruby
