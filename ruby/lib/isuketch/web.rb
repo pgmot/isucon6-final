@@ -17,6 +17,8 @@ module Isuketch
 
     helpers do
       def get_dbh
+        # データベースの初期化とか
+        # 毎回生成してる？
         host = ENV['MYSQL_HOST'] || 'localhost'
         port = ENV['MYSQL_PORT'] || '3306'
         user = ENV['MYSQL_USER'] || 'root'
@@ -167,6 +169,7 @@ module Isuketch
       )
     end
 
+    # ルーム一覧
     get '/api/rooms' do
       dbh = get_dbh
       results = select_all(dbh, %|
@@ -189,6 +192,7 @@ module Isuketch
       )
     end
 
+    # ルームの作成
     post '/api/rooms' do
       dbh = get_dbh
       token = check_token(dbh, request.env['HTTP_X_CSRF_TOKEN'])
@@ -244,6 +248,7 @@ module Isuketch
       )
     end
 
+    # 入った時にその部屋の線の情報を返す？
     get '/api/rooms/:id' do |id|
       dbh = get_dbh()
       room = get_room(dbh, id)
@@ -268,6 +273,7 @@ module Isuketch
 
     end
 
+    # 線の送信
     post '/api/strokes/rooms/:id' do |id|
       dbh = get_dbh()
       token = check_token(dbh, request.env['HTTP_X_CSRF_TOKEN'])
@@ -291,6 +297,7 @@ module Isuketch
         ))
       end
 
+      # .countネックになりそう？
       stroke_count = get_strokes(dbh, room[:id], 0).count
       if stroke_count == 0
         count = select_one(dbh, %|
