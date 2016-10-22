@@ -19,8 +19,9 @@ module Isuketch
     helpers do
       def get_redis
         Thread.current[:redis] ||=
-          Redis.new(:host => "127.0.0.1", :db => 0)
-        end
+          begin
+            Redis.new(:host => "127.0.0.1", :db => 0)
+          end
       end
 
       def get_dbh

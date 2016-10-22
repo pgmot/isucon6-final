@@ -18,12 +18,18 @@ services:
     #  - mysql
     #links:
     #  - mysql
+    depends_on:
+      - redis
+    links:
+      - redis
     environment:
       ISUCON_ENV: production
       MYSQL_HOST: 10.6.1.8
       MYSQL_PORT: 3306
       MYSQL_USER: isucon
       MYSQL_PASS: isucon
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "80:80"
   #react:
