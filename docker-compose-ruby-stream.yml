@@ -6,7 +6,7 @@ services:
   #    service: mysql
   ruby:
     build:
-      context: ./ruby-stream
+      context: ./ruby
       dockerfile: Dockerfile
     #depends_on:
     #  - mysql
