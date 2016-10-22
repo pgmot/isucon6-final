@@ -28,5 +28,14 @@ services:
       - ruby
     environment:
       API: http://ruby:80
+  h2o:
+    extends:
+      file: docker-compose-h2o.yml
+      service: h2o
+    depends_on:
+      - react
+      - ruby
+    links:
+      - react
     ports:
       - "443:443"
