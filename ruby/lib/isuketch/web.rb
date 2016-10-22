@@ -358,57 +358,6 @@ module Isuketch
       )
     end
 
-    get '/api/stream/rooms/:id', provides: 'text/event-stream' do |id|
-      stream do |writer|
-        dbh = get_dbh
-        token = check_token(dbh, request.params['HTTP_X_CSRF_TOKEN'])
-        token = check_token(dbh, request.params['csrf_token'])
-        unless token
-          logger.warn("---> mismatched token")
-          writer << ("event:bad_request\n" + "data:トークンエラー。ページを再読み込みしてください。\n\n")
-          writer.close
-          next
-        end
-
-        room = get_room(dbh, id)
-        unless room
-          writer << ("event:bad_request\n" + "data:この部屋は存在しません\n\n")
-          writer.close
-          next
-        end
-
-        update_room_watcher(dbh, room[:id], token[:id])
-        watcher_count = get_watcher_count(dbh, room[:id])
-
-        writer << ("retry:500\n\n" + "event:watcher_count\n" + "data:#{watcher_count}\n\n")
-
-        last_stroke_id = 0
-        if request.env['HTTP_LAST_EVENT_ID']
-          last_stroke_id = request.env['HTTP_LAST_EVENT_ID'].to_i
-        end
-
-        5.downto(0) do |i|
-          sleep 0.5
-
-          strokes = get_strokes(dbh, room[:id], last_stroke_id)
-          strokes.each do |stroke|
-            stroke[:points] = get_stroke_points(dbh, stroke[:id])
-            writer << ("id:#{stroke[:id]}\n\n" + "event:stroke\n" + "data:#{JSON.generate(to_stroke_json(stroke))}\n\n")
-            last_stroke_id = stroke[:id]
-          end
-
-          update_room_watcher(dbh, room[:id], token[:id])
-          new_watcher_count = get_watcher_count(dbh, room[:id])
-          if new_watcher_count != watcher_count
-            watcher_count = new_watcher_count
-            writer << ("event:watcher_count\n" + "data:#{watcher_count}\n\n")
-          end
-        end
-
-        writer.close
-      end
-    end
-
     if ENV['SQLLOG'] == '1'
       after do
         db.general_log.writefile(req: request, backtrace: true)
