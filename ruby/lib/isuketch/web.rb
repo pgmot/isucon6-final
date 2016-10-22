@@ -247,7 +247,7 @@ module Isuketch
         |)
         stmt.execute(posted_room[:name], posted_room[:canvas_width], posted_room[:canvas_height], token[:id])
         room_id = dbh.last_id
-        stmt.close
+        # stmt.close
       rescue
         dbh.query(%|ROLLBACK|)
         halt(500, {'Content-Type' => 'application/json'}, JSON.generate(
@@ -256,7 +256,7 @@ module Isuketch
       else
         dbh.query(%|COMMIT|)
       ensure
-        stmt.close
+        # stmt.close
       end
 
       room = get_room(dbh, room_id)
@@ -283,7 +283,7 @@ module Isuketch
       room[:strokes] = strokes
       room[:watcher_count] = get_watcher_count(room[:id])
 
-      dbh.close
+      # dbh.close
       content_type :json
       JSON.generate(
         room: to_room_json(room)
@@ -342,7 +342,7 @@ module Isuketch
         |)
         stmt.execute(room[:id], posted_stroke[:width], posted_stroke[:red], posted_stroke[:green], posted_stroke[:blue], posted_stroke[:alpha])
         stroke_id = dbh.last_id
-        stmt.close
+        # stmt.close
 
         posted_stroke[:points].each do |point|
           stmt = dbh.prepare(%|
@@ -352,7 +352,7 @@ module Isuketch
             (?, ?, ?)
           |)
           stmt.execute(stroke_id, point[:x], point[:y])
-          stmt.close
+          # stmt.close
         end
       rescue
         dbh.query(%| ROLLBACK |)
