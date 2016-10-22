@@ -59,7 +59,7 @@ module Isuketch
         result = stmt.execute(*binds)
         result.to_a
       ensure
-        stmt.close
+        # stmt.close
       end
 
       def get_room(dbh, room_id)
