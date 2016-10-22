@@ -405,7 +405,7 @@ module Isuketch
           last_stroke_id = request.env['HTTP_LAST_EVENT_ID'].to_i
         end
 
-        360.downto(0) do |i|
+        5.downto(0) do |i|
           sleep 0.5
 
           strokes = get_strokes(dbh, room[:id], last_stroke_id)
