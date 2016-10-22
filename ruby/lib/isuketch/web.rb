@@ -408,5 +408,11 @@ module Isuketch
         writer.close
       end
     end
+
+    if ENV['SQLLOG'] == '1'
+      after do
+        db.general_log.writefile(req: request, backtrace: true)
+      end
+    end
   end
 end
