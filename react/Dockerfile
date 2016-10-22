@@ -14,4 +14,9 @@ COPY . /react
 
 RUN NODE_ENV=production npm run build
 
+RUN mkdir -p /public
+RUN cp -r /react/public/css /public/
+RUN cp /react/public/favicon.ico /public/favicon.ico
+RUN cp /react/build/bundle.js /public/bundle.js
+
 CMD ["node", "build/server.js"]
