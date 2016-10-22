@@ -6,4 +6,7 @@ gem 'thin'
 
 group :development do
   gem 'sinatra-contrib', require: nil
+  gem 'stackprof'
+  gem 'dotenv'
+  gem 'mysql2-client-general_log', github: 'ABCanG/mysql2-client-general_log', branch: 'writefile'
 end
