@@ -155,6 +155,15 @@ module Isuketch
         |, [stroke_id])
       end
 
+      def get_strokes_points(dbh, stroke_ids)
+        select_all(dbh, %|
+          SELECT `id`, `stroke_id`, `x`, `y`
+          FROM `points`
+          WHERE `stroke_id` IN (#{stroke_ids.join(',')})
+          ORDER BY `id` ASC
+        |, [])
+      end
+
       def get_watcher_count(room_id)
         get_redis.zcount(room_id, Time.now.to_f-3, Time.now.to_f)
         #select_one(dbh, %|
@@ -277,9 +286,17 @@ module Isuketch
       end
 
       strokes = get_strokes(dbh, room[:id], 0)
+      stroke_points = get_strokes_points(dbh, strokes.map{|s| s[:id] })
       strokes.each do |stroke|
-        stroke[:points] = get_stroke_points(dbh, stroke[:id])
+        stroke[:points] = stroke_points.select{|s| s[:stroke_id] == stroke[:id] }
       end
+
+
+      # strokes = get_strokes(dbh, room[:id], 0)
+      # strokes.each do |stroke|
+      #   stroke[:points] = get_stroke_points(dbh, stroke[:id])
+      # end
+
       room[:strokes] = strokes
       room[:watcher_count] = get_watcher_count(room[:id])
 
