@@ -20,7 +20,7 @@ module Isuketch
       def get_redis
         Thread.current[:redis] ||=
           begin
-            Redis.new(:host => "127.0.0.1", :db => 0)
+            Redis.new(:host => ENV['REDIS_HOST'], :db => 0)
           end
       end
 
