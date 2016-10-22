@@ -25,19 +25,25 @@ module Isuketch
       end
 
       def get_dbh
+        # データベースの初期化とか
+        # 毎回生成してる？
         Thread.current[:db] ||=
           begin
-            host = ENV['REDIS_HOST'] || 'localhost'
-            port = ENV['REDIS_PORT'] || '6379'
+            host = ENV['MYSQL_HOST'] || '127.0.0.1'
+            port = ENV['MYSQL_PORT'] || '3306'
+            user = ENV['MYSQL_USER'] || 'root'
+            pass = ENV['MYSQL_PASS'] || ''
+            name = 'isuketch'
             mysql = Mysql2::Client.new(
-              username: user,
-              password: pass,
-              host: host,
-              port: port,
-              encoding: 'utf8mb4',
-              init_command: %|
-            SET TIME_ZONE = 'UTC'
-              |,
+            username: user,
+            password: pass,
+            database: name,
+            host: host,
+            port: port,
+            encoding: 'utf8mb4',
+            init_command: %|
+              SET TIME_ZONE = 'UTC'
+            |,
             )
             mysql.query_options.update(symbolize_keys: true)
             mysql
@@ -62,6 +68,23 @@ module Isuketch
           FROM `rooms`
           WHERE `id` = ?
         |, [room_id])
+      end
+
+      def get_rooms(dbh, room_ids)
+        select_all(dbh, %|
+          SELECT `id`, `name`, `canvas_width`, `canvas_height`, `created_at`
+          FROM `rooms`
+          WHERE `id` IN (#{room_ids.join(',')})
+        |, [])
+      end
+
+      def get_rooms_with_count(dbh, room_ids)
+        select_all(dbh, %|
+          SELECT r.id, r.name, r.canvas_width, r.canvas_height, r.created_at ,
+            (SELECT COUNT(id) FROM strokes s WHERE r.id = s.room_id) AS `stroke_count`
+          FROM `rooms` r
+          WHERE `id` IN (#{room_ids.join(',')})
+        |, [])
       end
 
       def get_strokes(dbh, room_id, greater_than_id)
@@ -176,6 +199,7 @@ module Isuketch
       )
     end
 
+    # ルーム一覧
     get '/api/rooms' do
       dbh = get_dbh
       results = select_all(dbh, %|
@@ -186,11 +210,7 @@ module Isuketch
         LIMIT 100
       |, [])
 
-      rooms = results.map {|res|
-        room = get_room(dbh, res[:room_id])
-        room[:stroke_count] = get_strokes(dbh, room[:id], 0).size
-        room
-      }
+      rooms = get_rooms_with_count(dbh, results.map{|res| res[:room_id] })
 
       content_type :json
       JSON.generate(
@@ -198,6 +218,7 @@ module Isuketch
       )
     end
 
+    # ルームの作成
     post '/api/rooms' do
       dbh = get_dbh
       token = check_token(dbh, request.env['HTTP_X_CSRF_TOKEN'])
@@ -253,6 +274,7 @@ module Isuketch
       )
     end
 
+    # 入った時にその部屋の線の情報を返す？
     get '/api/rooms/:id' do |id|
       dbh = get_dbh()
       room = get_room(dbh, id)
@@ -277,6 +299,7 @@ module Isuketch
 
     end
 
+    # 線の送信
     post '/api/strokes/rooms/:id' do |id|
       dbh = get_dbh()
       token = check_token(dbh, request.env['HTTP_X_CSRF_TOKEN'])
@@ -300,6 +323,7 @@ module Isuketch
         ))
       end
 
+      # .countネックになりそう？
       stroke_count = get_strokes(dbh, room[:id], 0).count
       if stroke_count == 0
         count = select_one(dbh, %|
