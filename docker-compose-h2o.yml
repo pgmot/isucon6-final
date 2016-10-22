@@ -1,0 +1,10 @@
+version: '2'
+services:
+  h2o:
+    image: lkwg82/h2o-http2-server
+    volumes:
+      - ./ssl:/ssl
+      - ./h2o:/h2o
+    command: h2o -c /h2o/h2o.conf
+    ports:
+      - "443:443"
