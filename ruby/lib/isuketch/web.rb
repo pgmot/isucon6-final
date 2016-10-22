@@ -65,6 +65,23 @@ module Isuketch
         |, [room_id])
       end
 
+      def get_rooms(dbh, room_ids)
+        select_all(dbh, %|
+          SELECT `id`, `name`, `canvas_width`, `canvas_height`, `created_at`
+          FROM `rooms`
+          WHERE `id` IN (#{room_ids.join(',')})
+        |, [])
+      end
+
+      def get_rooms_with_count(dbh, room_ids)
+        select_all(dbh, %|
+          SELECT r.id, r.name, r.canvas_width, r.canvas_height, r.created_at ,
+            (SELECT COUNT(id) FROM strokes s WHERE r.id = s.room_id) AS `stroke_count`
+          FROM `rooms` r
+          WHERE `id` IN (#{room_ids.join(',')})
+        |, [])
+      end
+
       def get_strokes(dbh, room_id, greater_than_id)
         select_all(dbh, %|
           SELECT `id`, `room_id`, `width`, `red`, `green`, `blue`, `alpha`, `created_at`
@@ -186,11 +203,7 @@ module Isuketch
         LIMIT 100
       |, [])
 
-      rooms = results.map {|res|
-        room = get_room(dbh, res[:room_id])
-        room[:stroke_count] = get_strokes(dbh, room[:id], 0).size
-        room
-      }
+      rooms = get_rooms_with_count(dbh, results.map{|res| res[:room_id] })
 
       content_type :json
       JSON.generate(
