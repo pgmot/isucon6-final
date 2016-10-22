@@ -16,7 +16,7 @@ import Canvas from './components/Canvas';
 import injectTapEventPlugin from 'react-tap-event-plugin';
 injectTapEventPlugin();
 
-const apiBaseUrl = process.env.API;
+const apiBaseUrl = "http://10.6.1.4:8080";
 if (!apiBaseUrl) {
   throw 'Please set environment variable API=http://...';
 }
@@ -104,7 +104,8 @@ app.get('*', (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 443;
+//const PORT = process.env.PORT || 443;
+const PORT = 80;
 http.createServer(app).listen(PORT);
 
 function createHtml(appHtml, scriptTag, csrfToken) {
