@@ -19,24 +19,27 @@ module Isuketch
       def get_dbh
         # データベースの初期化とか
         # 毎回生成してる？
-        host = ENV['MYSQL_HOST'] || 'localhost'
-        port = ENV['MYSQL_PORT'] || '3306'
-        user = ENV['MYSQL_USER'] || 'root'
-        pass = ENV['MYSQL_PASS'] || ''
-        name = 'isuketch'
-        mysql = Mysql2::Client.new(
-          username: user,
-          password: pass,
-          database: name,
-          host: host,
-          port: port,
-          encoding: 'utf8mb4',
-          init_command: %|
-            SET TIME_ZONE = 'UTC'
-          |,
-        )
-        mysql.query_options.update(symbolize_keys: true)
-        mysql
+        Thread.current[:db] ||=
+          begin
+            host = ENV['MYSQL_HOST'] || '127.0.0.1'
+            port = ENV['MYSQL_PORT'] || '3306'
+            user = ENV['MYSQL_USER'] || 'root'
+            pass = ENV['MYSQL_PASS'] || ''
+            name = 'isuketch'
+            mysql = Mysql2::Client.new(
+            username: user,
+            password: pass,
+            database: name,
+            host: host,
+            port: port,
+            encoding: 'utf8mb4',
+            init_command: %|
+              SET TIME_ZONE = 'UTC'
+            |,
+            )
+            mysql.query_options.update(symbolize_keys: true)
+            mysql
+          end
       end
 
       def select_one(dbh, sql, binds)
@@ -57,6 +60,23 @@ module Isuketch
           FROM `rooms`
           WHERE `id` = ?
         |, [room_id])
+      end
+
+      def get_rooms(dbh, room_ids)
+        select_all(dbh, %|
+          SELECT `id`, `name`, `canvas_width`, `canvas_height`, `created_at`
+          FROM `rooms`
+          WHERE `id` IN (#{room_ids.join(',')})
+        |, [])
+      end
+
+      def get_rooms_with_count(dbh, room_ids)
+        select_all(dbh, %|
+          SELECT r.id, r.name, r.canvas_width, r.canvas_height, r.created_at ,
+            (SELECT COUNT(id) FROM strokes s WHERE r.id = s.room_id) AS `stroke_count`
+          FROM `rooms` r
+          WHERE `id` IN (#{room_ids.join(',')})
+        |, [])
       end
 
       def get_strokes(dbh, room_id, greater_than_id)
@@ -180,11 +200,7 @@ module Isuketch
         LIMIT 100
       |, [])
 
-      rooms = results.map {|res|
-        room = get_room(dbh, res[:room_id])
-        room[:stroke_count] = get_strokes(dbh, room[:id], 0).size
-        room
-      }
+      rooms = get_rooms_with_count(dbh, results.map{|res| res[:room_id] })
 
       content_type :json
       JSON.generate(
@@ -356,12 +372,6 @@ module Isuketch
       JSON.generate(
         stroke: to_stroke_json(stroke)
       )
-    end
-
-    if ENV['SQLLOG'] == '1'
-      after do
-        db.general_log.writefile(req: request, backtrace: true)
-      end
     end
   end
 end
