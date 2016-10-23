@@ -21,25 +21,28 @@ module Isuketch
     helpers do
       def get_dbh
         # データベースの初期化とか
-        # 毎回生成してる？
-        host = ENV['MYSQL_HOST'] || 'localhost'
-        port = ENV['MYSQL_PORT'] || '3306'
-        user = ENV['MYSQL_USER'] || 'root'
-        pass = ENV['MYSQL_PASS'] || ''
-        name = 'isuketch'
-        mysql = Mysql2::Client.new(
-          username: user,
-          password: pass,
-          database: name,
-          host: host,
-          port: port,
-          encoding: 'utf8mb4',
-          init_command: %|
-            SET TIME_ZONE = 'UTC'
-          |,
-        )
-        mysql.query_options.update(symbolize_keys: true)
-        mysql
+        # DB再起動時、Rackも再起動必要
+        Thread.current[:db] ||= begin
+          host = ENV['MYSQL_HOST'] || 'localhost'
+          port = ENV['MYSQL_PORT'] || '3306'
+          user = ENV['MYSQL_USER'] || 'root'
+          pass = ENV['MYSQL_PASS'] || ''
+          name = 'isuketch'
+          mysql = Mysql2::Client.new(
+            username: user,
+            password: pass,
+            database: name,
+            host: host,
+            port: port,
+            encoding: 'utf8mb4',
+            init_command: %|
+              SET TIME_ZONE = 'UTC'
+            |,
+            reconnect: true
+          )
+          mysql.query_options.update(symbolize_keys: true)
+          mysql
+        end
       end
 
       def select_one(dbh, sql, binds)
@@ -414,7 +417,7 @@ module Isuketch
 
     if ENV['SQLLOG'] == '1'
       after do
-        db.general_log.writefile(req: request, backtrace: true)
+        get_dbh.general_log.writefile(req: request, backtrace: true)
       end
     end
   end
