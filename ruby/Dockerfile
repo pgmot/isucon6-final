@@ -10,4 +10,4 @@ RUN bundle install --jobs 4
 
 COPY . /app
 
-CMD bundle exec thin start --port 80 -A rack -R config.ru -e production
+CMD RACK_ENV=production bundle exec unicorn -l "0.0.0.0:80" -c config/unicorn.rb config.ru
