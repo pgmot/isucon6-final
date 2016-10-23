@@ -13,6 +13,9 @@ module Isuketch
     configure :development do
       require 'sinatra/reloader'
       register Sinatra::Reloader
+
+      logger = Logger.new("/tmp/rack.log")
+      use Rack::CommonLogger, logger
     end
 
     helpers do
