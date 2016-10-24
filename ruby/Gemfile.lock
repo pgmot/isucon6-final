@@ -1,6 +1,6 @@
 GIT
   remote: git://github.com/ABCanG/mysql2-client-general_log.git
-  revision: 2de4d608e4daeacea4adedf7ec01c0445380e480
+  revision: b56b2b2d65341e73049c02751ca44a6c6fdb1dd5
   branch: writefile
   specs:
     mysql2-client-general_log (0.2.1)

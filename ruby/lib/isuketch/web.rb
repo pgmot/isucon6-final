@@ -18,47 +18,51 @@ module Isuketch
       use Rack::CommonLogger, logger
     end
 
+    Thread.current[:stmts] ||= {}
+
     helpers do
       def get_dbh
         # データベースの初期化とか
         # DB再起動時、Rackも再起動必要
-        Thread.current[:db] ||= begin
-          host = ENV['MYSQL_HOST'] || 'localhost'
-          port = ENV['MYSQL_PORT'] || '3306'
-          user = ENV['MYSQL_USER'] || 'root'
-          pass = ENV['MYSQL_PASS'] || ''
-          name = 'isuketch'
-          mysql = Mysql2::Client.new(
-            username: user,
-            password: pass,
-            database: name,
-            host: host,
-            port: port,
-            encoding: 'utf8mb4',
-            init_command: %|
-              SET TIME_ZONE = 'UTC'
-            |,
-            reconnect: true
-          )
-          mysql.query_options.update(symbolize_keys: true)
-          mysql
+        dbh = Thread.current[:db]
+        unless dbh && dbh.ping
+          dbh = Thread.current[:db] =
+            begin
+              host = ENV['MYSQL_HOST'] || 'localhost'
+              port = ENV['MYSQL_PORT'] || '3306'
+              user = ENV['MYSQL_USER'] || 'root'
+              pass = ENV['MYSQL_PASS'] || ''
+              name = 'isuketch'
+              mysql = Mysql2::Client.new(
+                username: user,
+                password: pass,
+                database: name,
+                host: host,
+                port: port,
+                encoding: 'utf8mb4',
+                init_command: %|
+                  SET TIME_ZONE = 'UTC'
+                |
+              )
+              mysql.query_options.update(symbolize_keys: true)
+              mysql
+            end
         end
+        return dbh
       end
 
-      def select_one(dbh, sql, binds)
-        select_all(dbh, sql, binds).first
+      def select_one(dbh, stmt_key, sql, binds)
+        select_all(dbh, stmt_key, sql, binds).first
       end
 
-      def select_all(dbh, sql, binds)
-        stmt = dbh.prepare(sql)
+      def select_all(dbh, stmt_key, sql, binds)
+        stmt = prepare(dbh, stmt_key, sql)
         result = stmt.execute(*binds)
         result.to_a
-      ensure
-        stmt.close
       end
 
       def get_room(dbh, room_id)
-        select_one(dbh, %|
+        select_one(dbh, __method__, %|
           SELECT `id`, `name`, `canvas_width`, `canvas_height`, `created_at`
           FROM `rooms`
           WHERE `id` = ?
@@ -66,24 +70,24 @@ module Isuketch
       end
 
       def get_rooms(dbh, room_ids)
-        select_all(dbh, %|
+        select_all(dbh, nil, %|
           SELECT `id`, `name`, `canvas_width`, `canvas_height`, `created_at`
           FROM `rooms`
-          WHERE `id` IN (#{room_ids.join(',')})
-        |, [])
+          WHERE `id` IN (#{ Array.new(room_ids.length, '?').join(', ') })
+        |, [*room_ids])
       end
 
       def get_rooms_with_count(dbh, room_ids)
-        select_all(dbh, %|
+        select_all(dbh, nil, %|
           SELECT r.id, r.name, r.canvas_width, r.canvas_height, r.created_at ,
             (SELECT COUNT(id) FROM strokes s WHERE r.id = s.room_id) AS `stroke_count`
           FROM `rooms` r
-          WHERE `id` IN (#{room_ids.join(',')})
-        |, [])
+          WHERE `id` IN (#{ Array.new(room_ids.length, '?').join(', ') })
+        |, [*room_ids])
       end
 
       def get_strokes(dbh, room_id, greater_than_id)
-        select_all(dbh, %|
+        select_all(dbh, __method__, %|
           SELECT `id`, `room_id`, `width`, `red`, `green`, `blue`, `alpha`, `created_at`
           FROM `strokes`
           WHERE `room_id` = ?
@@ -134,7 +138,7 @@ module Isuketch
       end
 
       def check_token(dbh, csrf_token)
-        select_one(dbh, %|
+        select_one(dbh, __method__, %|
           SELECT `id`, `csrf_token`, `created_at` FROM `tokens`
           WHERE `csrf_token` = ?
             AND `created_at` > CURRENT_TIMESTAMP(6) - INTERVAL 1 DAY
@@ -142,7 +146,7 @@ module Isuketch
       end
 
       def get_stroke_points(dbh, stroke_id)
-        select_all(dbh, %|
+        select_all(dbh, __method__, %|
           SELECT `id`, `stroke_id`, `x`, `y`
           FROM `points`
           WHERE `stroke_id` = ?
@@ -151,7 +155,7 @@ module Isuketch
       end
 
       def get_watcher_count(dbh, room_id)
-        select_one(dbh, %|
+        select_one(dbh, __method__, %|
           SELECT COUNT(*) AS `watcher_count`
           FROM `room_watchers`
           WHERE `room_id` = ?
@@ -160,14 +164,16 @@ module Isuketch
       end
 
       def update_room_watcher(dbh, room_id, csrf_token)
-        stmt = dbh.prepare(%|
+        stmt = prepare(dbh, __method__, %|
           INSERT INTO `room_watchers` (`room_id`, `token_id`)
           VALUES (?, ?)
           ON DUPLICATE KEY UPDATE `updated_at` = CURRENT_TIMESTAMP(6)
         |)
         stmt.execute(room_id, csrf_token)
-      ensure
-        stmt.close
+      end
+
+      def prepare(dbh, stmt_key, sql)
+        stmt_key ? (Thread.current[:stmts][stmt_key] ||= dbh.prepare(sql)) : dbh.prepare(sql)
       end
     end
 
@@ -179,12 +185,12 @@ module Isuketch
         (SHA2(CONCAT(RAND(), UUID_SHORT()), 256))
       |)
 
-      id = dbh.last_id
-      token = select_one(dbh, %|
+      # id = dbh.last_id
+      token = dbh.query(%|
         SELECT `id`, `csrf_token`, `created_at`
         FROM `tokens`
-        WHERE `id` = ?
-      |, [id])
+        WHERE `id` = last_insert_id()
+      |).to_a.first
 
       content_type :json
       JSON.generate(
@@ -195,7 +201,7 @@ module Isuketch
     # ルーム一覧
     get '/api/rooms' do
       dbh = get_dbh
-      results = select_all(dbh, %|
+      results = select_all(dbh, :api_rooms, %|
         SELECT `room_id`, MAX(`id`) AS `max_id`
         FROM `strokes`
         GROUP BY `room_id`
@@ -232,7 +238,7 @@ module Isuketch
       begin
         dbh.query(%|BEGIN|)
 
-        stmt = dbh.prepare(%|
+        stmt = prepare(dbh, :insert_room, %|
           INSERT INTO `rooms`
           (`name`, `canvas_width`, `canvas_height`)
           VALUES
@@ -240,9 +246,8 @@ module Isuketch
         |)
         stmt.execute(posted_room[:name], posted_room[:canvas_width], posted_room[:canvas_height])
         room_id = dbh.last_id
-        stmt.close
 
-        stmt = dbh.prepare(%|
+        stmt = prepare(dbh, :insert_room_owner, %|
           INSERT INTO `room_owners`
           (`room_id`, `token_id`)
           VALUES
@@ -256,8 +261,6 @@ module Isuketch
         ))
       else
         dbh.query(%|COMMIT|)
-      ensure
-        stmt.close
       end
 
       room = get_room(dbh, room_id)
@@ -268,6 +271,7 @@ module Isuketch
     end
 
     # 入った時にその部屋の線の情報を返す？
+    # Reactの方でかなり呼び出している形跡あり。/img/:idの生成に使われている模様。
     get '/api/rooms/:id' do |id|
       dbh = get_dbh()
       room = get_room(dbh, id)
@@ -284,7 +288,6 @@ module Isuketch
       room[:strokes] = strokes
       room[:watcher_count] = get_watcher_count(dbh, room[:id])
 
-      dbh.close
       content_type :json
       JSON.generate(
         room: to_room_json(room)
@@ -331,11 +334,12 @@ module Isuketch
         end
       end
 
-      stroke_id = nil
+      stroke = nil
+      points = []
       begin
         dbh.query(%| BEGIN |)
 
-        stmt = dbh.prepare(%|
+        stmt = prepare(dbh, :insert_stroke, %|
           INSERT INTO `strokes`
           (`room_id`, `width`, `red`, `green`, `blue`, `alpha`)
           VALUES
@@ -343,17 +347,18 @@ module Isuketch
         |)
         stmt.execute(room[:id], posted_stroke[:width], posted_stroke[:red], posted_stroke[:green], posted_stroke[:blue], posted_stroke[:alpha])
         stroke_id = dbh.last_id
-        stmt.close
+        stroke = { id: stroke_id }.merge(posted_stroke)
 
         posted_stroke[:points].each do |point|
-          stmt = dbh.prepare(%|
+          stmt = prepare(dbh, :insert_point, %|
             INSERT INTO `points`
             (`stroke_id`, `x`, `y`)
             VALUES
             (?, ?, ?)
           |)
           stmt.execute(stroke_id, point[:x], point[:y])
-          stmt.close
+          point_id = dbh.last_id
+          points << { id: point_id }.merge(point)
         end
       rescue
         dbh.query(%| ROLLBACK |)
@@ -364,12 +369,7 @@ module Isuketch
         dbh.query(%| COMMIT |)
       end
 
-      stroke = select_one(dbh, %|
-        SELECT `id`, `room_id`, `width`, `red`, `green`, `blue`, `alpha`, `created_at`
-        FROM `strokes`
-        WHERE `id`= ?
-      |, [stroke_id])
-      stroke[:points] = get_stroke_points(dbh, stroke_id)
+      stroke[:points] = points
 
       content_type :json
       JSON.generate(
