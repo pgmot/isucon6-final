@@ -32,5 +32,16 @@ services:
       - ruby_dev
     environment:
       API: http://ruby_dev:80
+  nginx:
+    extends:
+      file: docker-compose-nginx.yml
+      service: nginx
+    depends_on:
+      - react
+    links:
+      - ruby_dev
+      - react
+    environment:
+      RUBY_API: ruby_dev
     ports:
       - "443:443"

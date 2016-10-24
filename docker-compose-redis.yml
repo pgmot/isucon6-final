@@ -1,0 +1,8 @@
+version: '2'
+services:
+  redis:
+    restart: always
+    image: redis
+    volumes:
+        - ./.redis:/data
+    command: redis-server --appendonly yes

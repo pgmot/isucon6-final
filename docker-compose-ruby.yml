@@ -30,3 +30,18 @@ services:
       API: http://ruby:80
     ports:
       - "443:443"
+  nginx:
+    extends:
+      file: docker-compose-nginx.yml
+      service: nginx
+    depends_on:
+      - ruby
+      - react
+      - mysql
+    links:
+      - ruby
+      - react
+    environment:
+      RUBY_API: ruby
+    ports:
+      - "443:443"
